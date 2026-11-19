@@ -4,7 +4,7 @@ Guía para agentes de código que trabajan en este repositorio. Qué es, cómo s
 
 ## Qué es
 
-A TypeScript Discord bot that posts an alert when configured Twitch channels go live. Each Discord server has its own alert channel and Twitch channel list. Shared Twitch channels are monitored once and announced in every server that subscribes to them.
+Bot de Discord en TypeScript que avisa cuando los canales de Twitch configurados empiezan a emitir. Cada servidor de Discord tiene su propio canal de avisos y su lista de canales de Twitch. Un canal de Twitch compartido se vigila una sola vez y se anuncia en todos los servidores suscritos.
 
 ## Estructura
 

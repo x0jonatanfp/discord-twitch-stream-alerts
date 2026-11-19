@@ -9,6 +9,8 @@
 
 A TypeScript Discord bot that posts an alert when configured Twitch channels go live. Each Discord server has its own alert channel and Twitch channel list. Shared Twitch channels are monitored once and announced in every server that subscribes to them.
 
+[Español](README.es.md)
+
 ## Features
 
 - Near-real-time alerts from Twitch EventSub `stream.online`, with Helix polling as a safety net.
@@ -112,22 +114,22 @@ src/
 tests/            Vitest suite with fakes
 ```
 
-## Despliegue con systemd
+## Deploying with systemd
 
-La unidad está en `deploy/announcements.service` y es una plantilla: `make install` sustituye `@DEPLOY_USER@`, `@DEPLOY_GROUP@`, `@DEPLOY_HOME@`, `@DEST@` y `@NODE_BIN@` antes de instalarla. Por defecto usa el usuario que ejecuta `make`, `/srv/services/announcements` y el `node` del `PATH`; se pueden cambiar por variables:
+The unit lives in `deploy/announcements.service` and is a template: `make install` replaces `@DEPLOY_USER@`, `@DEPLOY_GROUP@`, `@DEPLOY_HOME@`, `@DEST@` and `@NODE_BIN@` before installing it. By default it uses the user running `make`, `/srv/services/announcements` and the `node` in `PATH`; you can override them with variables:
 
 ```bash
 make install DEPLOY_USER=announcements DEPLOY_GROUP=announcements DEST=/srv/announcements
 ```
 
-La instalación del servicio y la actualización del código son pasos separados:
+Installing the service and updating the code are separate steps:
 
 ```bash
-make install  # crea el destino, instala la unidad y la config; no la habilita ni arranca
-make deploy   # build, dependencias de producción y código; habilita si hace falta y reinicia la unidad
+make install  # creates the destination, installs the unit and the config; does not enable or start it
+make deploy   # build, production dependencies and code; enables the unit if needed and restarts it
 ```
 
-Antes del primer `make deploy`, prepara `/srv/services/announcements/.env` con permisos `600` y `config/guilds.json` para producción. El deploy no copia `.env` y conserva la configuración de guild existente; `make install` crea esa configuración a partir de la copia local solo si aún no existe. La unidad arranca con el lanzador de secretos (`~/.secrets/bin/run srv:announcements`), que carga el `.env` del destino; la aplicación también lo lee desde su directorio de trabajo. Con `LOG_FILE=/var/log/announcements.log` el bot escribe además en ese fichero, que crean `deploy/announcements.tmpfiles.conf` y rota `deploy/announcements.logrotate.conf` (los instala `make install`).
+Before the first `make deploy`, prepare `/srv/services/announcements/.env` with `600` permissions and `config/guilds.json` for production. The deploy does not copy `.env` and keeps the existing guild configuration; `make install` creates that configuration from the local copy only if it does not exist yet. The unit starts through a secrets launcher (`~/.secrets/bin/run srv:announcements`) that loads the destination's `.env`; the application also reads it from its working directory. With `LOG_FILE=/var/log/announcements.log` the bot also writes to that file, which `deploy/announcements.tmpfiles.conf` creates and `deploy/announcements.logrotate.conf` rotates (both installed by `make install`).
 
 `TWITCH_RECONCILE_INTERVAL_SECONDS` defaults to 60 (valid 15–3600). EventSub supplies normal near-real-time start notifications; Helix polling reconciles after reconnect/startup and recovers events missed while disconnected. State is stored under `data/live-state.json` by default.
 
@@ -148,6 +150,6 @@ Tests use fakes and must not send real Discord messages or create Twitch subscri
 - Each person hosting a copy must create their own Discord and Twitch applications and provide their own credentials.
 - If a token or client secret is accidentally shared or committed, revoke/rotate it immediately.
 
-## Licencia
+## License
 
-MIT. Consulta [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

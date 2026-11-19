@@ -1,78 +1,78 @@
 # AGENTS.md · announcements
 
-Guía para agentes de código. Qué es y cómo se configura para personas está en `README.md`.
+Guide for coding agents. What it is and how to configure it for people is in `README.md`.
 
-## Qué es
+## What it is
 
-Bot de Discord (TypeScript, ESM, Node 22+) que publica un aviso cuando un canal de Twitch configurado empieza a emitir. Cada servidor tiene su canal de avisos y su lista de canales de Twitch. Un canal compartido por varios servidores se vigila una sola vez y se anuncia en todos los suscritos.
+Discord bot (TypeScript, ESM, Node 22+) that posts an announcement when a configured Twitch channel starts streaming. Each server has its own announcement channel and its own list of Twitch channels. A channel shared by several servers is watched only once and announced in all the subscribed servers.
 
-## Arquitectura
+## Architecture
 
-Hexagonal, con las capas de `domain/` → `application/` → `infrastructure/` y el composition root en `src/index.ts`.
+Hexagonal, with the layers `domain/` → `application/` → `infrastructure/` and the composition root in `src/index.ts`.
 
-- `src/domain/entities/stream.ts`: tipos del dominio (`LiveStream`, `StreamSubscriber`, `TwitchChannel`, etc.).
-- `src/domain/ports/`: puertos (`twitch-streams`, `stream-notifier`, `live-state-store`, `stream-config`, `logger`).
-- `src/application/build-subscriber-index.ts`: índice `broadcasterId → suscriptores` a partir de la configuración de guilds.
-- `src/application/reconcile-live-streams.ts`: caso de uso central. Gestiona el estado de directos, el reparto por suscriptor y la entrega pendiente (reintenta solo lo que falló).
-- `src/infrastructure/`: adaptadores. `twitch/` (Helix, EventSub por WebSocket, almacén de tokens, `oauth-setup.ts`), `discord/` (avisos y presencia), `persistence/` (JSON con el estado de directos), `config/` (entorno y `config/guilds.json`), `logging/`.
-- `src/index.ts`: composition root. Carga la configuración, resuelve los canales de Twitch con reintentos, valida los canales de Discord, arranca EventSub y el intervalo de reconciliación, y gestiona el cierre por señal.
+- `src/domain/entities/stream.ts`: domain types (`LiveStream`, `StreamSubscriber`, `TwitchChannel`, etc.).
+- `src/domain/ports/`: ports (`twitch-streams`, `stream-notifier`, `live-state-store`, `stream-config`, `logger`).
+- `src/application/build-subscriber-index.ts`: index `broadcasterId → subscribers` built from the guild configuration.
+- `src/application/reconcile-live-streams.ts`: central use case. Manages the live-stream state, the distribution per subscriber and the pending delivery (retries only what failed).
+- `src/infrastructure/`: adapters. `twitch/` (Helix, EventSub over WebSocket, token store, `oauth-setup.ts`), `discord/` (announcements and presence), `persistence/` (JSON with the live-stream state), `config/` (environment and `config/guilds.json`), `logging/`.
+- `src/index.ts`: composition root. Loads the configuration, resolves the Twitch channels with retries, validates the Discord channels, starts EventSub and the reconciliation interval, and handles shutdown on signals.
 
-Flujo principal: EventSub `stream.online` → `handleOnlineEvent` → avisos a cada suscriptor. Al reconectar y en cada ciclo (`TWITCH_RECONCILE_INTERVAL_SECONDS`, por defecto 60) se hace un `reconcile` con Helix, que recupera lo perdido y marca como terminados los directos que ya no aparecen.
+Main flow: EventSub `stream.online` → `handleOnlineEvent` → announcements to each subscriber. On reconnect and on every cycle (`TWITCH_RECONCILE_INTERVAL_SECONDS`, default 60) a `reconcile` runs against Helix, which recovers what was missed and marks as ended the streams that no longer appear.
 
-Dependencias: `domain/` y `application/` no importan de `infrastructure/`, ni de config ni del logger concreto. Esto se comprobó con grep; mantenerlo al añadir código.
+Dependencies: `domain/` and `application/` do not import from `infrastructure/`, nor from config or the concrete logger. This was checked with grep; keep it that way when adding code.
 
-## Comandos
+## Commands
 
-Scripts de `package.json`:
+Scripts in `package.json`:
 
-| Comando | Qué hace |
+| Command | What it does |
 | --- | --- |
-| `pnpm install` | Instala dependencias (pnpm 11, fijado en `packageManager`). |
-| `pnpm dev` | Arranca con `tsx watch src/index.ts`. |
-| `pnpm auth:twitch` | Flujo OAuth local que escribe tokens en el `.env` local. No imprime tokens. |
-| `pnpm build` | Limpia `dist/` y compila con `tsconfig.build.json`. |
-| `pnpm start` | Ejecuta `dist/index.js`. |
+| `pnpm install` | Installs dependencies (pnpm 11, pinned in `packageManager`). |
+| `pnpm dev` | Starts with `tsx watch src/index.ts`. |
+| `pnpm auth:twitch` | Local OAuth flow that writes tokens to the local `.env`. It does not print tokens. |
+| `pnpm build` | Cleans `dist/` and compiles with `tsconfig.build.json`. |
+| `pnpm start` | Runs `dist/index.js`. |
 | `pnpm typecheck` | `tsc --noEmit`. |
 | `pnpm test` | `vitest run`. |
-| `pnpm test:watch` / `pnpm test:coverage` | Vitest en modo watch / con cobertura. |
+| `pnpm test:watch` / `pnpm test:coverage` | Vitest in watch mode / with coverage. |
 
-`Makefile` (despliegue en un servidor propio con systemd):
+`Makefile` (deployment on your own server with systemd):
 
-- `make check`: typecheck, test y build.
-- `make install`: prepara el directorio de destino (`DEST`), instala la unidad, tmpfiles y logrotate, y crea `config/guilds.json` solo si no existe. **Usa `sudo`. No lo lances sin orden expresa.** No habilita ni arranca la unidad.
-- `make deploy`: depende de `release`, así que ejecuta el versionado y `git push --follow-tags`. Después hace build, sincroniza `dist/` y los manifiestos, instala dependencias de producción, habilita y reinicia la unidad. **Usa `sudo` y publica en remoto. No lo lances sin orden expresa.**
-- `make release`: exige árbol limpio (`check-clean`), ejecuta `commit-and-tag-version` y hace push con etiquetas.
-- `make restart`, `make status`, `make logs`: operaciones sobre la unidad. `restart` usa `sudo`.
+- `make check`: typecheck, test and build.
+- `make install`: prepares the target directory (`DEST`), installs the unit, tmpfiles and logrotate, and creates `config/guilds.json` only if it does not exist. **Uses `sudo`. Do not run it without an explicit order.** It does not enable or start the unit.
+- `make deploy`: depends on `release`, so it runs the versioning and `git push --follow-tags`. Then it builds, syncs `dist/` and the manifests, installs production dependencies, enables and restarts the unit. **Uses `sudo` and publishes to the remote. Do not run it without an explicit order.**
+- `make release`: requires a clean tree (`check-clean`), runs `commit-and-tag-version` and pushes with tags.
+- `make restart`, `make status`, `make logs`: operations on the unit. `restart` uses `sudo`.
 
-## Cómo probar un cambio
+## How to test a change
 
-- Tests en `tests/*.test.ts`, con Vitest (`vitest.config.ts` incluye `tests/**/*.test.ts`, entorno `node`, `clearMocks` y `restoreMocks` activos).
-- Los tests usan fakes. No deben enviar mensajes reales a Discord ni crear suscripciones en Twitch.
-- Un solo fichero, derivado del script `test`: `pnpm vitest run tests/reconcile-live-streams.test.ts`. Filtrar por nombre: `pnpm vitest run -t "<texto>"`.
-- Antes de dar un cambio por bueno: `pnpm typecheck && pnpm test && pnpm build`.
-- Cada comportamiento nuevo o bug corregido lleva su test en el mismo cambio.
+- Tests in `tests/*.test.ts`, with Vitest (`vitest.config.ts` includes `tests/**/*.test.ts`, `node` environment, `clearMocks` and `restoreMocks` enabled).
+- Tests use fakes. They must not send real messages to Discord or create subscriptions on Twitch.
+- A single file, derived from the `test` script: `pnpm vitest run tests/reconcile-live-streams.test.ts`. Filter by name: `pnpm vitest run -t "<text>"`.
+- Before accepting a change: `pnpm typecheck && pnpm test && pnpm build`.
+- Every new behaviour or fixed bug comes with its test in the same change.
 
-## Convenciones
+## Conventions
 
-- Gestor: **pnpm** (lockfile `pnpm-lock.yaml`, `pnpm-workspace.yaml`).
-- Código y nombres en inglés; ficheros en kebab-case; imports relativos con extensión `.js` (compilación ESM con `tsc`).
-- Versión y `CHANGELOG.md`: los genera `commit-and-tag-version` (`.versionrc.json`, prefijo de etiqueta `v`) durante `make release`. **No se editan a mano.** El commit de release es `chore(release): <etiqueta>`.
-- Los commits siguen Conventional Commits en español (`feat`, `fix`, `docs`, `chore`...). Las subidas de versión dependen de estos tipos.
-- Configuración por entorno: `.env` (no versionado) a partir de `.env.example`. Los `.env.example` y `config/guilds.example.json` son plantillas sin valores reales.
+- Package manager: **pnpm** (lockfile `pnpm-lock.yaml`, `pnpm-workspace.yaml`).
+- Code and names in English; files in kebab-case; relative imports with the `.js` extension (ESM compilation with `tsc`).
+- Version and `CHANGELOG.md`: generated by `commit-and-tag-version` (`.versionrc.json`, tag prefix `v`) during `make release`. **Not edited by hand.** The release commit is `chore(release): <tag>`.
+- Commits follow Conventional Commits in Spanish (`feat`, `fix`, `docs`, `chore`...). Version bumps depend on these types.
+- Environment configuration: `.env` (not versioned) based on `.env.example`. `.env.example` and `config/guilds.example.json` are templates without real values.
 
-## Decisiones y trampas
+## Decisions and pitfalls
 
-- **Entrega por suscriptor.** El estado guarda `deliveredTo` y `alerts` por directo. Un reintento no vuelve a enviar a quien ya recibió el aviso. Si cambias el formato del estado, revisa `json-live-state-store.ts` y el caso de uso antes de asumir compatibilidad.
-- **Un directo nuevo tiene `streamId` distinto.** Si el `streamId` cambia, el estado se reinicia para ese canal. Así se distingue un directo nuevo de uno ya anunciado.
-- **Miniatura y avisos cerrados.** El historial de commits (`fix(discord)` y `revert`) muestra que la miniatura se adjunta como `attachment://` y que el aviso se congela al cerrarse. Antes de tocar `infrastructure/discord/stream-notifier.ts`, lee el historial de esos commits (`git log --oneline -- src/infrastructure/discord/stream-notifier.ts`).
-- **Presencia.** Se reaplica tras los eventos ready/resume de Discord y en cada ciclo de reconciliación.
-- **Viewer count oculto por defecto.** `SHOW_VIEWER_COUNT` solo admite `true` o `false` (sin distinguir mayúsculas); cualquier otro valor rechaza el arranque.
-- **Intervalo de reconciliación acotado.** `TWITCH_RECONCILE_INTERVAL_SECONDS` debe estar entre 15 y 3600.
-- **Canal de Twitch sin resolver.** Si un login no se resuelve, se avisa y se sigue con el resto. Se corrige en `config/guilds.json` y reiniciando.
-- **Logs.** `LOG_FILE` añade un fichero además de la consola; vacío o ausente, solo consola.
-- **Nunca se versiona** `.env`, `config/guilds.json`, `data/`, tokens ni secretos de Discord o Twitch. Si alguno se filtra, rotarlo.
+- **Delivery per subscriber.** The state stores `deliveredTo` and `alerts` per stream. A retry does not send again to whoever already received the announcement. If you change the state format, check `json-live-state-store.ts` and the use case before assuming compatibility.
+- **A new stream has a different `streamId`.** If the `streamId` changes, the state is reset for that channel. This is how a new stream is told apart from one already announced.
+- **Thumbnail and closed announcements.** The commit history (`fix(discord)` and `revert`) shows that the thumbnail is attached as `attachment://` and that the announcement is frozen when the stream ends. Before touching `infrastructure/discord/stream-notifier.ts`, read the history of those commits (`git log --oneline -- src/infrastructure/discord/stream-notifier.ts`).
+- **Presence.** It is reapplied after Discord's ready/resume events and on every reconciliation cycle.
+- **Viewer count hidden by default.** `SHOW_VIEWER_COUNT` only accepts `true` or `false` (case-insensitive); any other value rejects startup.
+- **Bounded reconciliation interval.** `TWITCH_RECONCILE_INTERVAL_SECONDS` must be between 15 and 3600.
+- **Unresolved Twitch channel.** If a login does not resolve, it is reported and the rest carry on. It is fixed in `config/guilds.json` and by restarting.
+- **Logs.** `LOG_FILE` adds a file in addition to the console; empty or absent, console only.
+- **Never version** `.env`, `config/guilds.json`, `data/`, tokens or Discord or Twitch secrets. If any of them leaks, rotate it.
 
-## Mantenimiento
+## Maintenance
 
-- Este fichero y el `README.md` se actualizan en el mismo cambio que los deja obsoletos.
-- Aquí solo va lo que puede ser público: nada de rutas locales, puertos de la máquina, IPs, perfiles de secretos ni datos personales.
+- This file and the `README.md` are updated in the same change that makes them outdated.
+- Only publishable content goes here: no local paths, machine ports, IPs, secret profiles or personal data.
